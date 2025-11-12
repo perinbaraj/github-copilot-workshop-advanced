@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # PostgreSQL for User Service and Order Processing
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: techmart
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # MongoDB for Product Catalog
+  mongodb:
+    image: mongo:6
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass redis123
+
+  # RabbitMQ for async messaging
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # API Gateway
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - USER_SERVICE_URL=http://user-service:3001
+      - PRODUCT_SERVICE_URL=http://product-catalog:3002
+      - ORDER_SERVICE_URL=http://order-processing:3003
+      - PAYMENT_SERVICE_URL=http://payment-gateway:5000
+    depends_on:
+      - user-service
+      - product-catalog
+      - order-processing
+      - payment-gateway
+
+  # User Service (Node.js)
+  user-service:
+    build: ./services/user-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=techmart
+      - DB_USER=admin
+      - DB_PASSWORD=password123
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=redis123
+    depends_on:
+      - postgres
+      - redis
+
+  # Product Catalog (Node.js + MongoDB)
+  product-catalog:
+    build: ./services/product-catalog
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/products?authSource=admin
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=redis123
+    depends_on:
+      - mongodb
+      - redis
+
+  # Order Processing (Node.js)
+  order-processing:
+    build: ./services/order-processing
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=techmart
+      - DB_USER=admin
+      - DB_PASSWORD=password123
+      - RABBITMQ_URL=amqp://admin:password123@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  # Payment Gateway (Python Flask)
+  payment-gateway:
+    build: ./services/payment-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=techmart
+      - DB_USER=admin
+      - DB_PASSWORD=password123
+      - RABBITMQ_URL=amqp://admin:password123@rabbitmq:5672
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  # Notification Service (Python)
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      - RABBITMQ_URL=amqp://admin:password123@rabbitmq:5672
+      - SMTP_HOST=smtp.mailtrap.io
+      - SMTP_PORT=2525
+      - SMTP_USER=your_user
+      - SMTP_PASSWORD=your_password
+    depends_on:
+      - rabbitmq
+
+volumes:
+  postgres_data:
+  mongodb_data:
